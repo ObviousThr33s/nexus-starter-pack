@@ -1,0 +1,45 @@
+#!/bin/sh
+# Enforce an exact commit-title length.
+# Rule: the subject line must be exactly $WANT characters.
+# Origin: len("Add the radio line, and the..") == 29
+#
+# Builtins only, no sed/head/grep: this machine intermittently cannot fork
+# child processes, which would silently yield an empty subject.
+
+WANT=29
+
+# Subject = first non-empty, non-comment line of the message file.
+subject=
+while IFS= read -r line || [ -n "$line" ]; do
+	case "$line" in
+		'#'*) continue ;;
+		'') continue ;;
+		' '*|'	'*)
+			# leading whitespace only -> still counts if it has content
+			trimmed=${line#"${line%%[! 	]*}"}
+			[ -z "$trimmed" ] && continue
+			subject=$line
+			break
+			;;
+		*) subject=$line; break ;;
+	esac
+done < "$1"
+
+# Exemptions: machine-generated subjects we do not control.
+case "$subject" in
+	'Merge '*|'Revert '*|'fixup! '*|'squash! '*|'amend! '*) exit 0 ;;
+esac
+
+len=${#subject}
+
+if [ "$len" -ne "$WANT" ]; then
+	{
+		echo "commit-msg: title must be exactly $WANT characters (got $len)."
+		echo "  subject: $subject"
+		echo "  ruler:   12345678901234567890123456789"
+		echo "  example: Add the radio line, and the.."
+	} >&2
+	exit 1
+fi
+
+exit 0

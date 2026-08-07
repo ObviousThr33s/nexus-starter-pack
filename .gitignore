@@ -1,0 +1,27 @@
+# Credentials. Never commit this.
+secret.txt
+
+# Field-journal screenshots: they carry a real modem's serial number.
+journal/*.GIF
+journal/*.gif
+journal/*.png
+
+# Scala / scala-cli
+.bsp/
+.scala-build/
+.bloop/
+.metals/
+*.jar
+
+# Rust
+target/
+
+# PyInstaller
+build/
+dist/
+*.spec
+bin/
+
+# Python
+__pycache__/
+*.py[cod]

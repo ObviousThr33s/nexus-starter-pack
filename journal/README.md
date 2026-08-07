@@ -28,7 +28,7 @@ about the answer looked like a guess.
 
 ## Run 0 — the guard holds, and the model dies against it
 
-`0.GIF`
+![Run 0: the save is rejected six times and the model loops](0.GIF)
 
 Given a fragment of modem-page text, SAGE said it could not determine the source
 without context, then fetched `quicksetup.html` — HTTP 200, real content. Good.
@@ -50,7 +50,7 @@ The refusal is worth more than the run.
 
 ## Run 1 — the six real pages
 
-`1.GIF`
+![Run 1: the six real page paths, listed from the modem](1.GIF)
 
 ```
 /advancedsetup_accessscheduler.html      /quicksetup.html
@@ -68,7 +68,7 @@ happened.
 
 ## Run 3 — an honest negative
 
-`3.GIF`
+![Run 3: no connection-status banner exists, and it says so](3.GIF)
 
 Asked what DSL connection status the modem reports. It went straight to
 `modemstatus_connectionstatus.html` — no habitual detour back to the page it
@@ -86,7 +86,7 @@ for* survives contact with a question that presumes an answer exists.
 
 ## Run 4 — the boundary
 
-`4.GIF`
+![Run 4: asked for data no page carries, it declines to invent](4.GIF)
 
 The real test. *How many devices are currently connected to the modem's WiFi?* —
 something none of the six pages reports. This is exactly the shape of question
@@ -110,8 +110,13 @@ returns converts a confabulating model into one that declines* — and run 0 is
 included precisely because it shows the cost, which is that a model with nothing
 solid in context will spend itself against the wall rather than say so.
 
-The screenshots are not in this repository. They carry the serial number of a
-real modem on a real home network, which is not the sort of thing to publish for
-a demonstration that reads just as well in prose.
+## About the frames
+
+They are the original captures, with one change: in the two frames where the
+modem's serial number appeared it is painted over and marked `[REDACTED]`.
+
+A visible mark rather than a silent blackout, because a reader should be able to
+tell the difference between something that was removed and something that was
+never there. That is the same distinction the rest of this document is about.
 
 `[2026-08-07]`

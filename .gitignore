@@ -1,10 +1,9 @@
 # Credentials. Never commit this.
 secret.txt
 
-# Field-journal screenshots: they carry a real modem's serial number.
-journal/*.GIF
-journal/*.gif
-journal/*.png
+# The journal frames in this repository are redacted copies. If you add your
+# own, redact the device identifiers first - a screenshot of a working agent
+# is also a screenshot of the hardware it was working on.
 
 # Scala / scala-cli
 .bsp/

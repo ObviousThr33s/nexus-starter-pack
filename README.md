@@ -44,6 +44,29 @@ A digest that is merely *usually* right is worse than no digest, because you
 stop checking. Both programs are built so that the failure mode is a visible
 refusal instead of a confident wrong answer.
 
+## And the lies that remain
+
+Never invent data is a direction, not an achievement. Some falsehood survives in
+anything that summarises. The discipline is not reaching zero — it is keeping
+the count small, and saying where each one is.
+
+Named, in this pack:
+
+- The commit classifier is a heuristic over English subject lines. It is wrong on
+  any subject that does not describe its change, which is why its output is
+  always presented as a count of subjects and never as a claim about the code.
+- The week digest reports activity and cannot report intent. It will tell you
+  that four commits reworked `src/render`. It cannot tell you whether the
+  refactor was a good idea.
+- Over the GitHub API the digest computes counts only, because file statistics
+  cost one request per commit. It says so on screen rather than quietly serving
+  a thinner answer as though it were the same answer.
+- SAGE's guard checks that a claim's evidence appears in what the tools
+  returned. It cannot check that the model read that evidence correctly.
+
+Each of those is a known falsehood held at a size you can see. That is the
+achievable standard. The dangerous kind is the one nobody wrote down.
+
 ## Getting started
 
 ### SAGE

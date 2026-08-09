@@ -72,6 +72,21 @@ object Learning:
   def keyOf(claim: String): String =
     claim.toLowerCase.replaceAll("[^a-z0-9 ]", "").replaceAll("\\s+", " ").trim
 
+/** What `record` did with a claim.
+  *
+  * Four outcomes rather than two. `Either[String, Learning]` had no room for
+  * "already held, in different words" - which is neither a success to announce
+  * nor an error to retry - and the missing case is what let one page grow a
+  * third entry. An error would be the worse of the two wrong answers: the
+  * system prompt tells the model to read an error and try again, so dressing a
+  * near-duplicate as one is an instruction to reword it.
+  */
+enum Recorded:
+  case Created(learning: Learning)
+  case Reconfirmed(learning: Learning)
+  case AlreadyHeld(learning: Learning, reason: String)
+  case Refused(why: String)
+
 /** The learning store: content-addressed blobs plus a named dictionary.
   *
   *     sage-feed\learnings\blobs\a1\a126650c…    one observation
@@ -280,20 +295,24 @@ object Learnings:
     * seen five times across five sessions is a different kind of fact from one
     * seen once, and the store should be able to say which.
     */
-  def record(claimRaw: String, evidenceRaw: String, source: String): Either[String, Learning] =
+  def record(claimRaw: String, evidenceRaw: String, source: String): Recorded =
     val claim = claimRaw.trim.replaceAll("\\s+", " ")
-    if claim.isEmpty then Left("a learning needs a claim")
+    if claim.isEmpty then Recorded.Refused("a learning needs a claim")
     else if claim.length > Learning.MaxClaim then
-      Left(s"that claim is ${claim.length} characters. Learnings are small - one fact, " +
-        s"under ${Learning.MaxClaim} characters. Split it or cut it down.")
+      Recorded.Refused(s"that claim is ${claim.length} characters. Learnings are small - " +
+        s"one fact, under ${Learning.MaxClaim} characters. Split it or cut it down.")
     else
       if !loaded then load()
       val evidence = evidenceRaw.trim.take(Learning.MaxEvidence)
-      val hash     = putBlob(Observation(claim, evidence, source, now))
+      // Written before anything is decided about the dictionary, and that is
+      // what makes declining a name cheap: the observation happened and is on
+      // disk whatever the dictionary concludes. Same rule as forget - what can
+      // be withheld is the belief, never the sighting.
+      val hash = putBlob(Observation(claim, evidence, source, now))
 
-      val entry = byName.values.find(_.key == Learning.keyOf(claim)) match
+      byName.values.find(_.key == Learning.keyOf(claim)) match
         case Some(existing) =>
-          existing.copy(
+          val entry = existing.copy(
             evidence = if evidence.nonEmpty then evidence else existing.evidence,
             lastChecked = now,
             checks = existing.checks + 1,
@@ -301,13 +320,52 @@ object Learnings:
             // listing it twice would overstate the trail.
             blobs = (existing.blobs :+ hash).distinct
           )
-        case None =>
-          val name = Naming.nameFor(claim, evidence, byName.keySet.toSet)
-          Learning(name, claim, evidence, source, now, now, 1, Vector(hash))
+          byName(entry.name) = entry
+          writeDictionary()
+          Recorded.Reconfirmed(entry)
 
-      byName(entry.name) = entry
-      writeDictionary()
-      Right(entry)
+        case None =>
+          nearDuplicate(claim) match
+            case Some((held, why)) => Recorded.AlreadyHeld(held, why)
+            case None =>
+              val name  = Naming.nameFor(claim, evidence, byName.keySet.toSet)
+              val entry = Learning(name, claim, evidence, source, now, now, 1, Vector(hash))
+              byName(entry.name) = entry
+              writeDictionary()
+              Recorded.Created(entry)
+
+  /** The held learning a claim is a reworded copy of, and why.
+    *
+    * Consulted only once `keyOf` has found nothing, so the two strings are
+    * already known to differ.
+    *
+    * It declines rather than merging, and that is the whole design. Merging
+    * would take the `Some` branch above, which overwrites `evidence` with the
+    * newest - so a wrong merge does not merely inflate a count, it makes one
+    * fact display another fact's evidence and sorts it to the top of every
+    * future context block with a confidence it did not earn. Declining
+    * under-counts a re-confirmation instead. Understating a trust signal is
+    * recoverable tomorrow; overstating it is the ledger lying, which is the
+    * failure this store exists to prevent.
+    */
+  def nearDuplicate(claim: String): Option[(Learning, String)] =
+    if !loaded then load()
+    byName.values.view
+      .map(l => l -> Claim.sameFact(l.claim, claim))
+      .collectFirst { case (l, v) if v.same => l -> v.reason }
+
+  /** Entries that say the same thing as an earlier entry, with the reason.
+    *
+    * The same predicate the live gate uses, so this reports exactly what would
+    * be declined from now on. Reads only - see `--learnings dedupe`.
+    */
+  def duplicates: Vector[(Learning, Learning, String)] =
+    val held = all
+    held.zipWithIndex.flatMap { (later, i) =>
+      held.take(i).view
+        .map(earlier => earlier -> Claim.sameFact(earlier.claim, later.claim))
+        .collectFirst { case (earlier, v) if v.same => (earlier, later, v.reason) }
+    }
 
   /** Forgets by dictionary name or by claim.
     *
@@ -357,8 +415,10 @@ object Learnings:
          |${lines.mkString("\n")}
          |
          |These are prior findings, not guarantees - the device can change. If one is
-         |relevant, check it against a tool before relying on it, then save_learning to
-         |re-confirm it, or forget_learning by name and save the corrected fact.""".stripMargin
+         |relevant, check it against a tool before relying on it. If the check agrees, it
+         |is already recorded and needs nothing further: do not save it again, and do not
+         |save it in other words. Only if the check DISAGREES, forget_learning it by name
+         |and save the corrected fact.""".stripMargin
 
   /** The tool that lets the model record what it worked out.
     *
@@ -405,17 +465,33 @@ object Learnings:
           "model name, or already believed - only what you SAW. Quote the exact line " +
           "from the tool output, or look it up first and then save it."
       else
+        // No count in the re-confirm line, and no echo of the claim. The count
+        // read as progress - (seen 2 times), (seen 3), (seen 4) - so a model
+        // with nothing else to do could keep saving one fact and keep being
+        // told the call had worked, and echoing the claim handed back the exact
+        // string to send again. A fact already held is a finished job, worded
+        // identically however often it is asked.
+        //
+        // Identically now covers worded differently. The tool has no argument
+        // for "this is the one you already have" - the claim string is the only
+        // channel there is - so if a reworded save answered differently from a
+        // repeated one, rewording is a gradient and the model will climb it.
+        // That is what happened: 'contains' became 'includes' and one page grew
+        // a third name. These two branches must return the same bytes.
+        //
+        // And not an error. An error tells the model to read it and try again,
+        // which is the reword being asked for by name.
+        def alreadyHeld(l: Learning): String =
+          s"'${l.name}' was already known and is unchanged. Saving it again adds " +
+            "nothing. Answer the user's question now."
+
         record(claim, evidence, source) match
-          case Left(why) => s"error: $why"
-          case Right(l) =>
-            // No count in the re-confirm line, and no echo of the claim. The
-            // count read as progress - (seen 2 times), (seen 3), (seen 4) - so
-            // a model with nothing else to do could keep saving one fact and
-            // keep being told the call had worked, and echoing the claim handed
-            // back the exact string to send again. A fact already held is a
-            // finished job, worded identically however often it is asked.
-            if l.checks > 1 then
-              s"'${l.name}' was already known and is unchanged. Saving it again adds " +
-                "nothing. Answer the user's question now."
-            else s"saved as '${l.name}': ${l.claim}"
+          case Recorded.Refused(why)   => s"error: $why"
+          case Recorded.Created(l)     => s"saved as '${l.name}': ${l.claim}"
+          case Recorded.Reconfirmed(l) => alreadyHeld(l)
+          // The reason stays out of the reply deliberately: it names the one
+          // word that differed, which is a hint about what to change next. It
+          // goes to the operator instead - the reworded claim is in its own
+          // blob with its own timestamp, and --learnings dedupe explains it.
+          case Recorded.AlreadyHeld(l, _) => alreadyHeld(l)
     }

@@ -204,6 +204,63 @@ rather than a solved one.
 `AgentSuite.scala` covers both halves against a scripted `/chat/completions` on
 loopback — 10 checks, part of the 158 that `--self-test` runs.
 
+### Rewording, and why nothing is scored
+
+The obvious repair for a reworded duplicate is to score the overlap between two
+claims and merge above a threshold. The store's own contents refute it, which is
+better than an argument. Measured on content words:
+
+```
+"The modem firmware is CZW008-4.16.013.4."   {firmware, is}
+"The modem firmware is CZW008-4.16.013.5."   {firmware, is}    1.00
+
+"I have been in nature."                     {in, nature}
+"I have not been in nature."                 {in, nature}      1.00
+```
+
+Two different firmware builds, and a statement beside its own negation, both
+score a perfect 1.00 — and both wordings are real entries already in this
+ledger. Nor is there a safe cutoff lower down: one word differing out of nine
+scores 0.80 for *contains*/*includes*, which is one fact, and 0.80 for
+*password*/*hostname*, which is two. Same number, opposite answers.
+
+So nothing is scored. A claim is taken apart into three lists — **values** (any
+token carrying a digit), **polarity** (a closed list of words that flip a fact,
+extracted *before* stopwords because `not` is a stopword), and **content** (what
+remains, hedges dropped, a closed synonym table applied) — and all three must
+match exactly, in claim order. The only mechanism that can turn two different
+strings into one claim is that synonym table: eleven words, two classes, and the
+suite fails the build if any word in it is also a polarity word.
+
+**The runtime never merges anything.** It only declines to create. The
+observation blob is written before any decision is made, so a wrong verdict
+withholds a dictionary entry and loses nothing that was seen. Under-counting a
+re-confirmation is recoverable tomorrow; over-counting one — which also
+overwrites the displayed evidence with another fact's — is the ledger lying.
+
+Against the real dictionary, `--learnings dedupe` reports exactly one pair, and
+leaves alone the entry that shares most of its words but is a different finding:
+
+```
+observed-password-entering  The Quick Setup page includes fields for entering the PPP …
+says the same thing as
+observed-password-contains  The Quick Setup page contains fields for entering the PPP …
+
+read-password-entering      The modem requires entering PPP username and password …   ← not proposed
+```
+
+That third entry is the whole test. A rule loose enough to fold a *requirement*
+into a *page listing* is loose enough to fold `blocks` into `allows`.
+
+It reports and changes nothing. Rewriting a durable record as a side effect of
+inspecting it is the thing this store is built not to do, so the command prints
+what it found, names the gate that found it, and hands over the one `forget`
+line for a person to run. `forget` withdraws the belief and leaves the
+observation exactly where it is.
+
+`ClaimsSuite.scala` adds 29 checks — 187 total — every claim in it either
+verbatim from the ledger or a fact this modem can actually produce.
+
 ## What this does not show
 
 One model, one device, one afternoon, four runs. Nothing here is a benchmark.

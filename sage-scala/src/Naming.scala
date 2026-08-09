@@ -48,7 +48,7 @@ object Naming:
     "lan", "wifi", "dhcp", "lease", "route", "vlan", "sip", "mtu", "isp"
   )
 
-  private val stopWords = Set(
+  private[sage] val stopWords = Set(
     "the", "this", "that", "with", "from", "into", "have", "has", "had", "and",
     "for", "its", "it's", "are", "was", "were", "been", "being", "modem",
     "does", "not", "set", "uses", "used", "using", "which", "when", "there",
@@ -57,15 +57,15 @@ object Naming:
     "number", "version", "type", "state", "status", "configured", "listed"
   )
 
-  private val numberWords = Vector(
+  private[sage] val numberWords = Vector(
     "zero", "one", "two", "three", "four", "five", "six",
     "seven", "eight", "nine", "ten", "eleven", "twelve"
   )
 
-  private def words(text: String): List[String] =
+  private[sage] def words(text: String): List[String] =
     text.toLowerCase.split("[^a-z0-9.:_-]+").filter(_.nonEmpty).toList
 
-  private def slug(token: String): String =
+  private[sage] def slug(token: String): String =
     token.toLowerCase.replaceAll("[^a-z0-9]+", "-").replaceAll("(^-+)|(-+$)", "")
 
   private[sage] def verbFor(evidence: String): String =

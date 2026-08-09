@@ -90,6 +90,7 @@ object SelfTest:
   def run(out: String => Unit = println): Int =
     JsonSuite.register()
     NetguardSuite.register()
+    ClaimsSuite.register()
     LlmSuite.register()
     AgentSuite.register()
     Check.report(out)

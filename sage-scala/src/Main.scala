@@ -14,6 +14,7 @@ object Main:
       |  sage --cli                        terminal conversation
       |  sage --login                      log in to the modem and list its pages
       |  sage --learnings [forget <name>]  what has been found out, and its evidence
+      |  sage --learnings dedupe           report entries that reword an earlier one
       |
       |Endpoint shorthands: --ollama --localai --lmstudio --vllm
       |Options:             --base-url URL   --model NAME   --temperature N   --no-stream
@@ -150,6 +151,40 @@ object Main:
         else
           println(s"no learning named '$name'.")
           1
+
+      // Reports, and changes nothing. The dictionary is a durable record, and
+      // rewriting one as a side effect of inspecting it is the thing this store
+      // is built not to do - so this prints what it found, names the gate that
+      // found it, and leaves the decision with a person. What it recommends is
+      // forget, which already keeps every blob.
+      case "dedupe" :: _ =>
+        val found = Learnings.duplicates
+        if found.isEmpty then println("no reworded duplicates. Nothing to do.")
+        else
+          println(s"${found.size} reworded duplicate(s). NOTHING HAS BEEN CHANGED.\n")
+          found.foreach { case (earlier, later, why) =>
+            println(s"  ${later.name}   [${later.checks}x, ${later.blobs.length} " +
+              s"observation(s), first seen ${later.firstSeen}]")
+            println(s"      ${later.claim}")
+            println("  says the same thing as")
+            println(s"  ${earlier.name}   [${earlier.checks}x, ${earlier.blobs.length} " +
+              s"observation(s), first seen ${earlier.firstSeen}]")
+            println(s"      ${earlier.claim}")
+            println(s"  because $why")
+            println()
+          }
+          println("The earlier name is the one the model and the operator already hold, so")
+          println("it is the one to keep. Forgetting the copy withdraws the belief and")
+          println("leaves its observation blob exactly where it is - nothing seen is lost,")
+          println("and the entry that stays keeps its own count rather than inheriting a")
+          println("number nobody can defend. checks counts calls and blobs counts distinct")
+          println("observations; they already disagree, and adding them would pick one.")
+          println()
+          found.foreach { case (_, later, _) =>
+            println(s"    sage-scala.cmd --learnings forget ${later.name}")
+          }
+        0
+
       case _ =>
         val held = Learnings.all
         println(s"learnings: ${Learnings.dictionaryPath}")
@@ -168,7 +203,8 @@ object Main:
               println(s"      evidence: ${Llm.abbreviate(l.evidence.linesIterator.mkString(" "), 150)}")
             println(s"      ${l.blobs.length} observation(s), last ${l.lastChecked}")
             println()
-          println("forget one with:  sage-scala.cmd --learnings forget <name>")
+          println("forget one with:     sage-scala.cmd --learnings forget <name>")
+          println("look for rewordings: sage-scala.cmd --learnings dedupe")
         0
 
   private def connect(opts: Opts): Sage.Session =

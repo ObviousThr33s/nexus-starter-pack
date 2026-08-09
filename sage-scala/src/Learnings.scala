@@ -408,6 +408,14 @@ object Learnings:
         record(claim, evidence, source) match
           case Left(why) => s"error: $why"
           case Right(l) =>
-            if l.checks > 1 then s"re-confirmed '${l.name}' (seen ${l.checks} times): ${l.claim}"
+            // No count in the re-confirm line, and no echo of the claim. The
+            // count read as progress - (seen 2 times), (seen 3), (seen 4) - so
+            // a model with nothing else to do could keep saving one fact and
+            // keep being told the call had worked, and echoing the claim handed
+            // back the exact string to send again. A fact already held is a
+            // finished job, worded identically however often it is asked.
+            if l.checks > 1 then
+              s"'${l.name}' was already known and is unchanged. Saving it again adds " +
+                "nothing. Answer the user's question now."
             else s"saved as '${l.name}': ${l.claim}"
     }

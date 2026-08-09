@@ -259,6 +259,12 @@ final class Agent(
     // Once only. If the correction does not take, the model is not going to get
     // there and looping on it just spends the user's time.
     var nudged = false
+    // Every (tool, arguments) pair already dispatched in this turn. One turn is
+    // the unit where a repeat cannot mean anything: the first result is still in
+    // `history` word for word, so an identical call has nothing new to return.
+    // A later question, and a later session, each start empty - re-checking a
+    // fact tomorrow is a real check and must still count as one.
+    val dispatched = mutable.Set.empty[String]
 
     while answer.isEmpty && step < maxSteps do
       step += 1
@@ -290,22 +296,64 @@ final class Agent(
         // request is rejected outright.
         for call <- reply.message.toolCalls do
           onToolCall(call.name, call.arguments)
-          val result = tools.dispatch(call)
-          // Everything a tool returned is on the record, and a learning has to
-          // be traceable back to it. save_learning is excluded - it returns our
-          // own confirmation, and letting a claim vouch for itself would defeat
-          // the whole check.
-          if call.name != "save_learning" then witness.record(result)
+          val signature = call.name + "|" + call.arguments
+          val result =
+            // Seen live: the model saved a fact it already held four times
+            // running, was told each time that the save had worked, and spent
+            // the whole budget without ever answering. Re-running the call is
+            // what makes that possible, so it is not re-run. save_learning
+            // above all must not - a second identical save adds a check to the
+            // dictionary against the same observation, and that inflated count
+            // then sorts the fact to the top of every future context block with
+            // a confidence it did not earn.
+            if !dispatched.add(signature) then
+              s"you already called ${call.name} with these exact arguments this turn - it " +
+                "was not run again, because its result is already above in this " +
+                "conversation. Stop calling tools and answer the user's question now."
+            else
+              val fresh = tools.dispatch(call)
+              // Everything a tool returned is on the record, and a learning has
+              // to be traceable back to it. save_learning is excluded - it
+              // returns our own confirmation, and letting a claim vouch for
+              // itself would defeat the whole check.
+              if call.name != "save_learning" then witness.record(fresh)
+              fresh
           onToolResult(call.name, result)
           history = history :+ Message.tool(call.id, call.name, result)
+
+        // Nothing else tells the model a budget exists, so it cannot know it is
+        // one round from being cut off. Said on the last round that still has a
+        // reply after it, and only there.
+        if step == maxSteps - 1 then
+          history = history :+ Message.user(
+            "You have no tool rounds left. Do not call another tool. Answer the user's " +
+              "question now from what the tools have already returned, and say plainly " +
+              "if anything you needed is missing.")
 
     answer match
       case Some(text) => (history, text)
       case None =>
-        // Out of steps. Say so plainly rather than returning nothing: the user
-        // needs to know the answer is missing because the model kept looking,
-        // not because nothing happened.
-        throw Llm.ApiError(
-          s"gave up after $maxSteps tool rounds without a final answer - the model " +
-            "may be looping. Try a more specific question"
-        )
+        // Out of rounds with the model still reaching for tools. One more
+        // request with none attached: Request.toJson omits the field entirely
+        // when `tools` is empty, so there is nothing to call and the only thing
+        // left is prose. Asking has already failed by this point, and throwing
+        // here would discard the whole turn - every page fetched in those
+        // rounds goes with it, and the next question re-fetches them.
+        val forced = history :+ Message.user(
+          "You are out of tool rounds. Answer the user's question now, using only what " +
+            "the tools have already returned in this conversation. If you never got what " +
+            "you needed, say what is missing.")
+        val finalReq = Request(model, budget.trim(forced), temperature)
+        val last =
+          if stream then client.stream(finalReq)(onDelta) else client.complete(finalReq)
+        val text = last.message.content.trim
+        if text.nonEmpty then (forced :+ last.message, text)
+        else
+          // Nothing came back even with nothing to call. Say so plainly rather
+          // than returning nothing: the user needs to know the answer is
+          // missing because the model kept looking, not because nothing
+          // happened.
+          throw Llm.ApiError(
+            s"gave up after $maxSteps rounds without a final answer - the model may be " +
+              "looping. Try a more specific question"
+          )

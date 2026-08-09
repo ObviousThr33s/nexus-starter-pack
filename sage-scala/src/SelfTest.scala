@@ -91,6 +91,7 @@ object SelfTest:
     JsonSuite.register()
     NetguardSuite.register()
     LlmSuite.register()
+    AgentSuite.register()
     Check.report(out)
 
 object JsonSuite:
